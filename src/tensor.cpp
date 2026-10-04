@@ -6,6 +6,7 @@
 #include <utility>
 #include <stdexcept>
 #include <ranges>
+#include <cuda_runtime.h>
 namespace tinyinfer
 {
 
@@ -16,20 +17,24 @@ namespace tinyinfer
               shape_.begin(),
               shape_.end(),
               std::size_t{1},
-              std::multiplies<>{})),
-          data_{nullptr}
+              std::multiplies<>{}))
     {
-        if (device_ == Device::CUDA) {
-            throw std::runtime_error("CUDA device not supported yet");
-        }
 
-        if (std::ranges::find(shape_, 0) != std::ranges::end(shape_)) {
+        if (std::ranges::find(shape_, 0) != std::ranges::end(shape_))
+        {
             throw std::runtime_error("0 dim not supported");
         }
 
-        data_ = std::make_unique<float[]>(numel_);
-
-
+        if (device_ == Device::CUDA)
+        {
+            float *raw{nullptr};
+            cudaMalloc(reinterpret_cast<void **>(&raw), numel_ * sizeof(float));
+            data_.reset(raw);
+        }
+        else
+        {
+            data_.reset(new float[numel_]);
+        }
     }
 
     Device Tensor::device() const
@@ -55,5 +60,16 @@ namespace tinyinfer
     {
         return data_.get();
     }
-
+    TensorDeleter::TensorDeleter(Device device) : device{device} {};
+    void TensorDeleter::operator()(float *ptr)
+    {
+        if (device == Device::CUDA)
+        {
+            cudaFree(ptr);
+        }
+        else if (device == Device::CPU)
+        {
+            delete[] ptr;
+        }
+    }
 }
