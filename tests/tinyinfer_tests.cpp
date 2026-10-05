@@ -1,10 +1,9 @@
 #include <gtest/gtest.h>
 
 #include "tinyinfer/tensor.hpp"
-
+#include "tinyinfer/ops.hpp"
 using tinyinfer::Device;
 using tinyinfer::Tensor;
-
 TEST(TensorTest, ComputesNumel2D)
 {
     Tensor t{{2, 3}, Device::CPU};
@@ -40,7 +39,7 @@ TEST(TensorTest, StoresDevice)
 TEST(TensorTest, DataIsReadableAndWritable)
 {
     Tensor t{{2, 3}, Device::CPU};
-    float* data = t.data();
+    float *data = t.data();
 
     ASSERT_NE(data, nullptr);
 
@@ -71,7 +70,7 @@ TEST(TensorTest, ConstructsCudaTensor)
 TEST(TensorTest, MoveConstructsCpuTensor)
 {
     Tensor source{{2, 3}, Device::CPU};
-    float* original = source.data();
+    float *original = source.data();
 
     Tensor dest{std::move(source)};
 
@@ -84,7 +83,7 @@ TEST(TensorTest, MoveConstructsCpuTensor)
 TEST(TensorTest, MoveConstructsCudaTensor)
 {
     Tensor source{{2, 3}, Device::CUDA};
-    float* original = source.data();
+    float *original = source.data();
 
     Tensor dest{std::move(source)};
 
@@ -99,7 +98,7 @@ TEST(TensorTest, MoveAssignsCpuTensor)
     Tensor source{{2, 3}, Device::CPU};
     Tensor dest{{4, 4}, Device::CPU};
 
-    float* original = source.data();
+    float *original = source.data();
 
     dest = std::move(source);
 
@@ -114,7 +113,7 @@ TEST(TensorTest, MoveAssignsCudaTensor)
     Tensor source{{2, 3}, Device::CUDA};
     Tensor dest{{4, 4}, Device::CUDA};
 
-    float* original = source.data();
+    float *original = source.data();
 
     dest = std::move(source);
 
@@ -122,4 +121,47 @@ TEST(TensorTest, MoveAssignsCudaTensor)
     EXPECT_EQ(dest.device(), Device::CUDA);
     EXPECT_EQ(dest.numel(), 6);
     EXPECT_EQ(dest.shape(), (std::vector<std::size_t>{2, 3}));
+}
+
+TEST(TensorTest, ProperlyCopiesMemory)
+{
+    Tensor source{{2, 3}, Device::CPU};
+
+    float *data = source.data();
+
+    for (int i = 0; i < 6; ++i)
+    {
+        data[i] = static_cast<float>(i + 1);
+    }
+
+    Tensor deviceTensor = source.to(Device::CUDA);
+    Tensor onHost = deviceTensor.to(Device::CPU);
+
+    for (int i = 0; i < 6; ++i)
+    {
+        EXPECT_EQ(onHost.data()[i], static_cast<float>(i + 1));
+        EXPECT_EQ(source.data()[i], static_cast<float>(i + 1));
+    }
+}
+
+TEST(TensorTest, reluExecutesProperly)
+{
+    Tensor source{{2,3}, Device::CPU};
+     float *data = source.data();
+     for (int i = 0; i < 6; ++i)
+    {
+        data[i] = static_cast<float>(i -3);
+    }
+    // [-3, -2, -1, 0 1, 2] -> [0,0,0,0,1,2]
+    int nums[6] = {0,0,0,0,1,2};
+    Tensor opCPU = tinyinfer::relu(source);
+    Tensor onGPU = source.to(Device::CUDA);
+    Tensor opGPU = tinyinfer::relu(onGPU);
+    Tensor final = opGPU.to(Device::CPU);
+    for (int i = 0; i < 6; i++) {
+        EXPECT_EQ(opCPU.data()[i], nums[i]);
+        EXPECT_EQ(final.data()[i], nums[i]);
+    }
+
+
 }
