@@ -158,10 +158,71 @@ TEST(TensorTest, reluExecutesProperly)
     Tensor onGPU = source.to(Device::CUDA);
     Tensor opGPU = tinyinfer::relu(onGPU);
     Tensor final = opGPU.to(Device::CPU);
+
     for (int i = 0; i < 6; i++) {
         EXPECT_EQ(opCPU.data()[i], nums[i]);
         EXPECT_EQ(final.data()[i], nums[i]);
     }
 
 
+}
+
+
+TEST(TensorTest, AddWorks)
+{
+    Tensor a{{2, 3}, Device::CPU};
+    Tensor b{{2, 3}, Device::CPU};
+
+    float aValues[] = {1, 2, 3, 4, 5, 6};
+    float bValues[] = {6, 5, 4, 3, 2, 1};
+    float expected[] = {7, 7, 7, 7, 7, 7};
+
+    std::copy(std::begin(aValues), std::end(aValues), a.data());
+    std::copy(std::begin(bValues), std::end(bValues), b.data());
+
+    Tensor cpuResult = tinyinfer::add(a, b);
+
+    Tensor aGPU = a.to(Device::CUDA);
+    Tensor bGPU = b.to(Device::CUDA);
+
+    Tensor gpuResult = tinyinfer::add(aGPU, bGPU);
+    Tensor gpuResultCPU = gpuResult.to(Device::CPU);
+
+    for (std::size_t i = 0; i < a.numel(); ++i)
+    {
+        EXPECT_FLOAT_EQ(cpuResult.data()[i], expected[i]);
+        EXPECT_FLOAT_EQ(gpuResultCPU.data()[i], expected[i]);
+    }
+}
+
+
+
+TEST(TensorTest, MatmulWorks)
+{
+    Tensor a{{2, 3}, Device::CPU};
+    Tensor b{{3, 2}, Device::CPU};
+
+    float aValues[] = {1, 2, 3, 4, 5, 6};
+    float bValues[] = {7, 8, 9, 10, 11, 12};
+    float expected[] = {58, 64, 139, 154};
+
+    std::copy(std::begin(aValues), std::end(aValues), a.data());
+    std::copy(std::begin(bValues), std::end(bValues), b.data());
+
+    Tensor cpuResult = tinyinfer::mamtul(a, b);
+
+    Tensor aGPU = a.to(Device::CUDA);
+    Tensor bGPU = b.to(Device::CUDA);
+
+    Tensor gpuResult = tinyinfer::mamtul(aGPU, bGPU);
+    Tensor gpuResultCPU = gpuResult.to(Device::CPU);
+
+    EXPECT_EQ(cpuResult.shape(), (std::vector<std::size_t>{2, 2}));
+    EXPECT_EQ(gpuResult.shape(), (std::vector<std::size_t>{2, 2}));
+
+    for (std::size_t i = 0; i < 4; ++i)
+    {
+        EXPECT_FLOAT_EQ(cpuResult.data()[i], expected[i]);
+        EXPECT_FLOAT_EQ(gpuResultCPU.data()[i], expected[i]);
+    }
 }
