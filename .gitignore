@@ -1,2 +1,7 @@
 build/
 .vscode/
+.cache/
+compile_commands.json
+*.nsys-rep
+*.sqlite
+examples/digits/data/

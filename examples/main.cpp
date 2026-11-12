@@ -20,7 +20,7 @@ int main()
     Tensor aGPU = a.to(Device::CUDA);
     Tensor bGPU = b.to(Device::CUDA);
 
-    Tensor c = mamtul(aGPU, bGPU);
+    Tensor c = matmul(aGPU, bGPU);
 
     cudaDeviceSynchronize();
 }

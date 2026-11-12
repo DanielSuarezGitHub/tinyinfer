@@ -1,4 +1,5 @@
 #include "tinyinfer/ops.hpp"
+#include <stdexcept>
 
 namespace tinyinfer
 {
@@ -7,12 +8,57 @@ namespace tinyinfer
     Tensor reluCPU(const Tensor &input);
     Tensor addCUDA(const Tensor &a, const Tensor &b);
     Tensor addCPU(const Tensor &a, const Tensor &b);
-    Tensor mamtulCUDA(const Tensor &a, const Tensor &b);
-    Tensor mamtulCPU(const Tensor &a, const Tensor &b);
+    void matmulCUDAInto(const Tensor &a, const Tensor &b, Tensor &output);
+    void matmulCPUInto(const Tensor &a, const Tensor &b, Tensor &output);
+    Tensor addBiasCUDA(const Tensor &a, const Tensor &b);
+    Tensor addBiasCPU(const Tensor &a, const Tensor &b);
 
+    Tensor addBias(const Tensor &a, const Tensor &b)
+    {
+        if (a.shape().size() != 2 || b.shape().size() != 1)
+        {
+            throw std::runtime_error("addBias needs a matrix and a bias vector");
+        }
+        if (a.device() != b.device())
+        {
+            throw std::runtime_error("incompatible device");
+        }
 
+        if (a.shape()[1] != b.shape()[0])
+        {
+            throw std::runtime_error("incompatible shapes");
+        }
 
-    Tensor mamtul(const Tensor &a, const Tensor &b)
+        if (a.device() == Device::CPU)
+        {
+            return addBiasCPU(a, b);
+        }
+        else
+        {
+            return addBiasCUDA(a, b);
+        }
+    }
+
+    Tensor addBiasCPU(const Tensor &a, const Tensor &b)
+    {
+        const std::size_t M = a.shape()[0];
+        const std::size_t K = a.shape()[1];
+        const float *A = a.data();
+        const float *B = b.data();
+
+        Tensor result{{M, K}, Device::CPU};
+        float *C = result.data();
+        for (int i = 0; i < M; i++)
+        {
+            for (int j = 0; j < K; j++)
+            {
+              C[K * i + j]  = A[K * i + j] + B[j];
+            }
+        }
+        return result;
+    }
+
+    Tensor matmul(const Tensor &a, const Tensor &b)
     {
         if (a.device() != b.device())
         {
@@ -27,12 +73,28 @@ namespace tinyinfer
             throw std::runtime_error("incompatible shapes");
         }
 
-        if (a.device() == Device::CPU) {
-            return mamtulCPU(a,b);
-        } else {
-            return mamtulCUDA(a,b);
-        }
+        Tensor output({a.shape()[0], b.shape()[1]}, a.device());
+        matmulInto(a, b, output);
+        return output;
     };
+
+    void matmulInto(const Tensor &a, const Tensor &b, Tensor &output)
+    {
+        if (a.shape().size() != 2 || b.shape().size() != 2 ||
+            a.shape()[1] != b.shape()[0] || a.device() != b.device())
+        {
+            throw std::runtime_error("incompatible matmul inputs");
+        }
+        if (output.shape() != std::vector<std::size_t>{a.shape()[0], b.shape()[1]} ||
+            output.device() != a.device() || output.data() == a.data() || output.data() == b.data())
+        {
+            throw std::runtime_error("incompatible matmul output");
+        }
+        if (a.device() == Device::CPU)
+            matmulCPUInto(a, b, output);
+        else
+            matmulCUDAInto(a, b, output);
+    }
 
     Tensor relu(const Tensor &input)
     {
@@ -67,35 +129,32 @@ namespace tinyinfer
         }
     }
 
-    Tensor mamtulCPU(const Tensor& a, const Tensor& b)
-{
-    const std::size_t M = a.shape()[0];
-    const std::size_t K = a.shape()[1];
-    const std::size_t N = b.shape()[1];
-
-    Tensor result{{M, N}, Device::CPU};
-
-    const float* A = a.data();
-    const float* B = b.data();
-    float* C = result.data();
-
-    for (std::size_t i = 0; i < M; ++i)
+    void matmulCPUInto(const Tensor &a, const Tensor &b, Tensor &result)
     {
-        for (std::size_t j = 0; j < N; ++j)
+        const std::size_t M = a.shape()[0];
+        const std::size_t K = a.shape()[1];
+        const std::size_t N = b.shape()[1];
+
+        const float *A = a.data();
+        const float *B = b.data();
+        float *C = result.data();
+
+        for (std::size_t i = 0; i < M; ++i)
         {
-            float sum = 0.0f;
-
-            for (std::size_t k = 0; k < K; ++k)
+            for (std::size_t j = 0; j < N; ++j)
             {
-                sum += A[i * K + k] * B[k * N + j];
+                float sum = 0.0f;
+
+                for (std::size_t k = 0; k < K; ++k)
+                {
+                    sum += A[i * K + k] * B[k * N + j];
+                }
+
+                C[i * N + j] = sum;
             }
-
-            C[i * N + j] = sum;
         }
-    }
 
-    return result;
-}
+    }
 
     Tensor addCPU(const Tensor &a, const Tensor &b)
     {

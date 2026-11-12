@@ -44,3 +44,6 @@ target_link_libraries(tinyinfer_tests
 
 include(GoogleTest)
 gtest_discover_tests(tinyinfer_tests)
+
+add_executable(digits_example examples/digits/main.cpp)
+target_link_libraries(digits_example PRIVATE tinyinfer)

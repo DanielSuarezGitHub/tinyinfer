@@ -1,7 +1,11 @@
 #include <gtest/gtest.h>
+#include <fstream>
+#include <cstdio>
 
 #include "tinyinfer/tensor.hpp"
 #include "tinyinfer/ops.hpp"
+#include "tinyinfer/nn.hpp"
+
 using tinyinfer::Device;
 using tinyinfer::Tensor;
 TEST(TensorTest, ComputesNumel2D)
@@ -209,12 +213,12 @@ TEST(TensorTest, MatmulWorks)
     std::copy(std::begin(aValues), std::end(aValues), a.data());
     std::copy(std::begin(bValues), std::end(bValues), b.data());
 
-    Tensor cpuResult = tinyinfer::mamtul(a, b);
+    Tensor cpuResult = tinyinfer::matmul(a, b);
 
     Tensor aGPU = a.to(Device::CUDA);
     Tensor bGPU = b.to(Device::CUDA);
 
-    Tensor gpuResult = tinyinfer::mamtul(aGPU, bGPU);
+    Tensor gpuResult = tinyinfer::matmul(aGPU, bGPU);
     Tensor gpuResultCPU = gpuResult.to(Device::CPU);
 
     EXPECT_EQ(cpuResult.shape(), (std::vector<std::size_t>{2, 2}));
@@ -225,4 +229,94 @@ TEST(TensorTest, MatmulWorks)
         EXPECT_FLOAT_EQ(cpuResult.data()[i], expected[i]);
         EXPECT_FLOAT_EQ(gpuResultCPU.data()[i], expected[i]);
     }
+}
+
+
+TEST(TensorTest, AddBiasWorks)
+{
+    Tensor a{{2, 3}, Device::CPU};
+    Tensor bias{{3}, Device::CPU};
+
+    float values[] = {1, 2, 3, 4, 5, 6};
+    float biases[] = {10, 20, 30};
+    float expected[] = {11, 22, 33, 14, 25, 36};
+
+    std::copy(std::begin(values), std::end(values), a.data());
+    std::copy(std::begin(biases), std::end(biases), bias.data());
+
+    Tensor cpuResult = tinyinfer::addBias(a, bias);
+
+    Tensor aGPU = a.to(Device::CUDA);
+    Tensor biasGPU = bias.to(Device::CUDA);
+
+    Tensor gpuResult = tinyinfer::addBias(aGPU, biasGPU).to(Device::CPU);
+
+    for (std::size_t i = 0; i < 6; ++i)
+    {
+        EXPECT_FLOAT_EQ(cpuResult.data()[i], expected[i]);
+        EXPECT_FLOAT_EQ(gpuResult.data()[i], expected[i]);
+    }
+}
+
+TEST(TensorTest, MLPWorks)
+{
+    tinyinfer::MLP cpuModel(4, 8, 2, Device::CPU);
+    tinyinfer::MLP gpuModel(4, 8, 2, Device::CUDA);
+
+    Tensor input{{3, 4}, Device::CPU};
+    std::fill_n(input.data(), input.numel(), 1.0f);
+
+    Tensor cpuOutput = cpuModel.forward(input);
+    Tensor gpuOutput = gpuModel.forward(input.to(Device::CUDA))
+                              .to(Device::CPU);
+
+    EXPECT_EQ(cpuOutput.shape(), (std::vector<std::size_t>{3, 2}));
+
+    for (std::size_t i = 0; i < cpuOutput.numel(); ++i)
+    {
+        EXPECT_NEAR(cpuOutput.data()[i], gpuOutput.data()[i], 1e-4f);
+    }
+}
+TEST(TensorTest, MatmulIntoWorks)
+{
+    Tensor a({2, 2}, Device::CPU);
+    Tensor b({2, 2}, Device::CPU);
+    Tensor output({2, 2}, Device::CPU);
+    std::fill_n(a.data(), 4, 2.0f);
+    std::fill_n(b.data(), 4, 3.0f);
+    float *allocation = output.data();
+    tinyinfer::matmulInto(a, b, output);
+    EXPECT_EQ(output.data(), allocation);
+    for (int i = 0; i < 4; ++i)
+        EXPECT_FLOAT_EQ(output.data()[i], 12.0f);
+}
+
+TEST(TensorTest, RejectsBadShapes)
+{
+    Tensor matrix({2, 3}, Device::CPU);
+    Tensor vector({3}, Device::CPU);
+    EXPECT_THROW(tinyinfer::matmul(matrix, matrix), std::runtime_error);
+    EXPECT_THROW(tinyinfer::addBias(vector, vector), std::runtime_error);
+}
+
+TEST(TensorTest, ModelSaveLoadWorks)
+{
+    {
+        std::ofstream file("test_model.txt");
+        file << "1 1 1\n2\n1\n3\n4\n";
+    }
+    auto model = tinyinfer::MLP::load("test_model.txt", Device::CPU);
+    Tensor input({2, 1}, Device::CPU);
+    input.data()[0] = -2;
+    input.data()[1] = 2;
+    Tensor output = model.forward(input);
+    EXPECT_FLOAT_EQ(output.data()[0], 4);
+    EXPECT_FLOAT_EQ(output.data()[1], 19);
+    model.save("test_model_saved.txt");
+    auto loaded = tinyinfer::MLP::load("test_model_saved.txt", Device::CUDA);
+    Tensor gpuOutput = loaded.forward(input.to(Device::CUDA)).to(Device::CPU);
+    EXPECT_NEAR(gpuOutput.data()[0], 4, 1e-5f);
+    EXPECT_NEAR(gpuOutput.data()[1], 19, 1e-5f);
+    std::remove("test_model.txt");
+    std::remove("test_model_saved.txt");
 }

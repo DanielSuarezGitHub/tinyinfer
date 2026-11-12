@@ -22,6 +22,21 @@ namespace tinyinfer
         }
     }
 
+    __global__ void addBiasKernel(
+        const float *A,
+        const float *B,
+        float *C,
+        std::size_t n,
+        std::size_t K)
+    {
+        std::size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+        for (std::size_t i = idx; i < n; i += gridDim.x * blockDim.x)
+        {
+            C[i] = A[i] + B[i % K];
+        }
+    }
+
     __global__ void matmulKernel(
         const float *a,
         const float *b,
@@ -37,9 +52,11 @@ namespace tinyinfer
         // B: sharedDim x numColsB
         // C: numRowsA x numColsB
 
-        if (row < numRowsA && col < numColsB) {
+        if (row < numRowsA && col < numColsB)
+        {
             float f = 0.0;
-            for (std::size_t i = 0; i < sharedDim; i++) {
+            for (std::size_t i = 0; i < sharedDim; i++)
+            {
                 f += a[row * sharedDim + i] * b[col + i * numColsB];
             }
             out[row * numColsB + col] = f;
@@ -64,13 +81,32 @@ namespace tinyinfer
         return T;
     }
 
-    Tensor mamtulCUDA(const Tensor &a, const Tensor &b)
+    Tensor addBiasCUDA(const Tensor &a, const Tensor &b)
+    {
+        const std::size_t M = a.shape()[0];
+        const std::size_t K = a.shape()[1];
+
+        Tensor result{{M, K}, Device::CUDA};
+
+        constexpr int blockSize = 256;
+        const int numBlocks = static_cast<int>(
+            std::min<std::size_t>((a.numel() + blockSize - 1) / blockSize, 768));
+
+        addBiasKernel<<<numBlocks, blockSize>>>(
+            a.data(),
+            b.data(),
+            result.data(),
+            a.numel(),
+            K);
+
+        return result;
+    }
+
+    void matmulCUDAInto(const Tensor &a, const Tensor &b, Tensor &result)
     {
         const int numRowsA = static_cast<int>(a.shape()[0]);
         const int sharedDim = static_cast<int>(a.shape()[1]);
         const int numColsB = static_cast<int>(b.shape()[1]);
-
-        Tensor result{{a.shape()[0], b.shape()[1]}, Device::CUDA};
 
         const dim3 blockSize{16, 16};
         const dim3 numBlocks{
@@ -85,7 +121,6 @@ namespace tinyinfer
             sharedDim,
             numColsB);
 
-        return result;
     }
 
 }
